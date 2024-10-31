@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
 
   interface EpochTimestamp {
     components: {
@@ -13,19 +15,9 @@
 
   let timestamp: EpochTimestamp | null = $state(null);
 
-  const updateTimestamp = () => {
-    // Get the high-resolution time origin (milliseconds since UNIX epoch)
-    const timeOriginMs = performance.timeOrigin; // e.g., 1697040000000.123
-
-    // Get the high-resolution current time (milliseconds since timeOrigin)
-    const nowMs = performance.now(); // e.g., 12345.678
-
-    // Convert both timeOrigin and now to nanoseconds using BigInt for precision
-    const timeOriginNs = BigInt(Math.floor(timeOriginMs * 1e6)); // Convert ms to ns (1 ms = 1,000,000 ns)
-    const nowNs = BigInt(Math.floor(nowMs * 1e6)); // Convert ms to ns
-
-    // Calculate the total nanoseconds since UNIX epoch
-    const totalNs = timeOriginNs + nowNs;
+  const updateTimestamp = (currentNs: number) => {
+    // Convert the input nanoseconds to BigInt
+    const totalNs = BigInt(currentNs);
 
     // Define BigInt constants for calculations
     const ONE_BILLION = BigInt(1_000_000_000); // 1 second in nanoseconds
@@ -49,16 +41,29 @@
     };
   };
 
-  let interval: number | null = null;
+  let unlisten: () => void | null = null;
+
+  const startEmitter = async () => {
+    try {
+      await invoke("start_precise_timestamp_emitter");
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const startListener = async () => {
+    unlisten = await listen<number>("precise_timestamp", (event) => {
+      updateTimestamp(event.payload);
+    });
+  };
 
   onMount(() => {
-    interval = setInterval(updateTimestamp, 100);
+    startEmitter();
+    startListener();
   });
 
   onDestroy(() => {
-    if (interval) {
-      clearInterval(interval);
-    }
+    unlisten?.();
   });
 
   const copyTimestamp = async (
