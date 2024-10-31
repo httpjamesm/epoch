@@ -41,7 +41,7 @@
     };
   };
 
-  let unlisten: () => void | null = null;
+  let unlisten: (() => void) | null = null;
 
   const startEmitter = async () => {
     try {
